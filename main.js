@@ -1,31 +1,80 @@
+const DEFAULT_USER_AGENT = 'Mozilla/5.0 (Linux; Android 15; Pixel 9) AppleWebKit/537.36 (KHTML, like Gecko) Edg/154.0.0.0 Mobile Safari/537.36'
+
+const request = async (url, options) => {
+  const response = await fetch(url, {
+    ...options,
+    signal: AbortSignal.timeout(20000),
+  })
+  if (!response.ok) throw new Error(`HTTP ${response.status}`)
+  let data
+  try {
+    data = await response.json()
+  } catch {
+    throw new Error('GLaDOS returned a non-JSON response')
+  }
+  if (!data || typeof data !== 'object' || Array.isArray(data)) {
+    throw new Error('GLaDOS returned an invalid response')
+  }
+  return data
+}
+
 const glados = async () => {
   const notice = []
-  if (!process.env.GLADOS) return
-  for (const cookie of String(process.env.GLADOS).split('\n')) {
-    if (!cookie) continue
+  const cookies = String(process.env.GLADOS || '').split('\n').filter((cookie) => cookie.trim())
+  if (!cookies.length) {
+    process.exitCode = 1
+    return ['Checkin Error', 'GLADOS cookie is missing']
+  }
+  const userAgent = process.env.GLADOS_USER_AGENT || DEFAULT_USER_AGENT
+  const browserHints = userAgent === DEFAULT_USER_AGENT ? {
+    'sec-ch-ua': '"Chromium";v="154", "Microsoft Edge";v="154", "Not A(Brand";v="99"',
+    'sec-ch-ua-mobile': '?1',
+    'sec-ch-ua-platform': '"Android"',
+  } : {}
+  for (const cookie of cookies) {
     try {
       const common = {
         'cookie': cookie,
         'referer': 'https://glados.cloud/console/checkin',
-        'user-agent': 'Mozilla/4.0 (compatible; MSIE 7.0; Windows NT 6.0)',
+        'origin': 'https://glados.cloud',
+        'accept': 'application/json, text/plain, */*',
+        'user-agent': userAgent,
+        ...browserHints,
       }
-      const action = await fetch('https://glados.cloud/api/user/checkin', {
+      const action = await request('https://glados.cloud/api/user/checkin', {
         method: 'POST',
         headers: { ...common, 'content-type': 'application/json' },
         body: '{"token":"glados.cloud"}',
-      }).then((r) => r.json())
-      if (action?.code) throw new Error(action?.message)
-      const status = await fetch('https://glados.cloud/api/user/status', {
+      })
+      const message = String(action.message ?? '')
+      const normalized = message.trim().toLowerCase()
+      const alreadyDone = normalized.startsWith('checkin repeats! please try tomorrow')
+      const observation = normalized.startsWith("today's observation logged")
+      const authDenied = action.reason === 'device-mismatch' ||
+        /automated check-in detected|没有权限|unauthorized|permission/i.test(message)
+      const accepted = action.code === 0 || (action.code === 1 && (alreadyDone || observation))
+      if (authDenied || !accepted) {
+        throw new Error(message || `Checkin returned code=${action.code ?? 'missing'}`)
+      }
+      const status = await request('https://glados.cloud/api/user/status', {
         method: 'GET',
         headers: { ...common },
-      }).then((r) => r.json())
-      if (status?.code) throw new Error(status?.message)
+      })
+      if (status.code !== 0) {
+        throw new Error(String(status.message || `Status returned code=${status.code ?? 'missing'}`))
+      }
+      const leftDays = status.data?.leftDays
+      if (leftDays == null || String(leftDays).trim() === '' ||
+          !['number', 'string'].includes(typeof leftDays) || !Number.isFinite(Number(leftDays))) {
+        throw new Error('Status returned invalid leftDays')
+      }
       notice.push(
-        'Checkin OK',
-        `${action?.message}`,
-        `Left Days ${Number(status?.data?.leftDays)}`
+        alreadyDone ? 'Checkin Already Done' : 'Checkin OK',
+        message,
+        `Left Days ${Number(leftDays)}`
       )
     } catch (error) {
+      process.exitCode = 1
       notice.push(
         'Checkin Error',
         `${error}`,
@@ -113,4 +162,7 @@ const main = async () => {
   await notify(await glados())
 }
 
-main()
+main().catch((error) => {
+  process.exitCode = 1
+  console.error(`Checkin Error: ${error.message}`)
+})
