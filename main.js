@@ -1,4 +1,4 @@
-const DEFAULT_USER_AGENT = 'Mozilla/5.0 (Linux; Android 16; Pixel 10) AppleWebKit/537.36 (KHTML, like Gecko) Edg/154.0.0.0 Mobile Safari/537.36'
+const DEFAULT_USER_AGENT = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/154.0.0.0 Safari/537.36 Edg/154.0.0.0'
 
 const request = async (url, options) => {
   const response = await fetch(url, {
@@ -28,8 +28,8 @@ const glados = async () => {
   const userAgent = process.env.GLADOS_USER_AGENT || DEFAULT_USER_AGENT
   const browserHints = userAgent === DEFAULT_USER_AGENT ? {
     'sec-ch-ua': '"Chromium";v="154", "Microsoft Edge";v="154", "Not A(Brand";v="99"',
-    'sec-ch-ua-mobile': '?1',
-    'sec-ch-ua-platform': '"Android"',
+    'sec-ch-ua-mobile': '?0',
+    'sec-ch-ua-platform': '"macOS"',
   } : {}
   for (const cookie of cookies) {
     try {
