@@ -38,6 +38,10 @@ const glados = async () => {
         'referer': 'https://glados.cloud/console/checkin',
         'origin': 'https://glados.cloud',
         'accept': 'application/json, text/plain, */*',
+        'accept-language': 'zh-CN,zh;q=0.9,en;q=0.8,en-GB;q=0.7,en-US;q=0.6',
+        'sec-fetch-dest': 'empty',
+        'sec-fetch-mode': 'cors',
+        'sec-fetch-site': 'same-origin',
         'user-agent': userAgent,
         ...browserHints,
       }
@@ -54,7 +58,12 @@ const glados = async () => {
         /automated check-in detected|没有权限|unauthorized|permission/i.test(message)
       const accepted = action.code === 0 || (action.code === 1 && (alreadyDone || observation))
       if (authDenied || !accepted) {
-        throw new Error(message || `Checkin returned code=${action.code ?? 'missing'}`)
+        const deviceInfo = action.reason === 'device-mismatch' ?
+          ['loginDevice', 'currentDevice']
+            .filter((key) => typeof action[key] === 'string')
+            .map((key) => `${key}=${action[key].slice(0, 200).replace(/[\r\n]/g, ' ')}`)
+            .join(', ') : ''
+        throw new Error(`${message || 'Checkin failed'} (code=${action.code ?? 'missing'}, reason=${action.reason ?? 'unspecified'}${deviceInfo ? ', ' + deviceInfo : ''})`)
       }
       const status = await request('https://glados.cloud/api/user/status', {
         method: 'GET',
